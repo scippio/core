@@ -305,6 +305,9 @@
 .filetree .tree-row > span.caption {
     margin-left: 4px;
 }
+.filetree .tree-row.heading > span.caption {
+    margin-left: 0;
+}
 
 .toolbar-top.basic .c9-menu-btnDown.scripts{
     border: 0;
@@ -328,10 +331,6 @@
     // margin-top: -7px;
     // height: 46px !important;
     display: none;
-}
-
-.ace_gutter-cell.ace_info{
-    .image-2x("@{theme-image-path}/ace_info_flat_light.png", 16px, 16px, no-repeat, true);
 }
 
 .c9-toolbarbutton-glossy .c9-icon {
@@ -380,14 +379,76 @@
     padding-right: 0;
 }
 
-.filetree.ace_tree_focus .selected .extrainfo{
+.ace_tree.ace_tree_focus .selected .extrainfo{
     color: #FFFFFF;
     .font-smoothing(true);
 }
 
 .loading-spinner {
     .image-2x("/static/@{pane-button-save-image}", @pane-button-save-image-width, @pane-button-save-image-height);
-    .animation(~"loading-24-spinner 1s linear 0s infinite normal");
+    .animation(~"loading-24-spinner 1.2s steps(24) infinite")!important;
+}
+
+.searchresults .item{
+    padding : 5px 3px 1px 5px;
+}
+
+.ace_tree .tree-row .checkbox{
+    outline: 1px solid rgba(0, 0, 0, 0.16);
+    background: white;
+    width: 13px;
+    height: 13px;
+    margin: -2px 5px 0 0px;
+    display: inline-block;
+    vertical-align: middle;
+    pointer-events: auto;
+}
+.ace_tree .tree-row .checkbox.checked{
+    background-position: -2px -2px;
+}
+.ace_tree .tree-row .checkbox.half-checked{
+    background-color: #DDDDDD;
+    background-position: -2px -2px;
+}
+.installer .execute .progress{
+    bottom: -44px;
+}
+.top-test-panel{
+    border-bottom: 1px solid @border-highlight;
+}
+
+.has_apf .toolbar-top .sbtb_middle{
+    height: auto;
+    padding: 4px 25px 3px 5px;
+    border: 0;
+    margin-right: 1px;
+}
+
+.top-test-panel{
+    border-bottom: 1px solid @border-highlight-dark;
+    box-shadow: none;
+}
+
+body .runner-form-header{
+    background: whitesmoke;
+}
+
+.runtestbtn .icon{
+    background-position: 1px 2px;
+    height: 22px;
+}
+
+.coverage-toolbar{
+    background-color:#f7f7f7;
+    border-bottom: 1px solid #ECECEC;
+    box-sizing: border-box;
+}
+.coverage-toolbar .label{
+    padding:7px;
+}
+.coverage-toolbar .black_dropdown{
+    margin: 0 !important;
+    min-height: 28px !important;
 }
 
 @media print, (-o-min-device-pixel-ratio: 5/4), (-webkit-min-device-pixel-ratio: 1.25), (min-resolution: 1.25dppx) {
@@ -427,14 +488,14 @@
         background-position : 0 -126px;
     }
     .dark.session_btn.curbtn .tab_middle:before {
-        -webkit-mask-position : 0 -94px;
+        -webkit-mask-position : 0 -95px;
     }
     .dark.session_btn.curbtn .tab_middle:after,
     .session_btn.curbtn .tab_middle:after { 
         background-position : -42px -126px; 
     }
     .dark.session_btn.curbtn .tab_middle:after {
-        -webkit-mask-position : -42px -94px;
+        -webkit-mask-position : -42px -95px;
     }
     .session_btn.curbtn .tab_shadow:before {
         background-position : 0 -123px;
@@ -444,5 +505,8 @@
     }
     .c9-toolbarbutton-glossy .c9-icon {
         height: 19px;
+    }
+    .runtestbtn .icon{
+        height: 21px;
     }
 }

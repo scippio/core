@@ -18,6 +18,7 @@ define(function(require, module, exports) {
             var caption = options.caption;
             var noscroll = options.noscroll;
             var className = options.className || "";
+            var visible = options.visible == null || options.visible;
             var index = options.index || 100;
             var headings = {};
             var subHeadings = {};
@@ -217,24 +218,31 @@ define(function(require, module, exports) {
                         .addNavigation(caption, index, heading.navHtml, plugin);
                         
                     subHeadings[caption] = { navHtml: htmlNode, index: index };
+                    htmlNode.$caption = caption;
                     
-                    htmlNode.addEventListener("mousedown", function(){
-                        apf.tween.single(container.$int, {
-                            type: "scrollTop",
-                            steps: 10,
-                            anim: apf.tween.easeInOutCubic,
-                            from: container.$int.scrollTop,
-                            to: form.headings[caption].container.$ext.offsetTop
-                        })
-                    });
+                    htmlNode.addEventListener("mousedown", scrollTo.bind(null, caption));
                 }
                 
                 return subHeadings[caption];
             }
             
+            function scrollTo(caption) {
+                if (!form.headings[caption])
+                    return;
+                apf.tween.single(container.$int, {
+                     type: "scrollTop",
+                    steps: 10,
+                    anim: apf.tween.easeInOutCubic,
+                    from: container.$int.scrollTop,
+                    to: form.headings[caption].container.$ext.offsetTop
+                })
+            }
+            
             /***** LifeCycle *****/
             
             plugin.on("load", function(){
+                if (!visible) return;
+                
                 navHtml = prefs.addNavigation(caption, index, null, plugin);
                 navHtml.addEventListener("mousedown", function(){
                     prefs.activate(plugin);
@@ -261,7 +269,7 @@ define(function(require, module, exports) {
                             "textarea"        : 400,
                             "checked-spinner" : 50
                         }
-                    });
+                    }, plugin);
                 }
             });
             
@@ -322,6 +330,10 @@ define(function(require, module, exports) {
              */
             plugin.freezePublicAPI({
                 /**
+                 * @ignore.
+                 */
+                get section() { return lastA && lastA.$caption; },
+                /**
                  * The APF UI element that is presenting the pane in the UI.
                  * This property is here for internal reasons only. *Do not 
                  * depend on this property in your plugin.*
@@ -352,6 +364,13 @@ define(function(require, module, exports) {
                  */
                 get form(){ return form },
                 
+                /**
+                 * Whether this panel is active
+                 * @property {Boolean} active
+                 * @readonly
+                 */
+                get active(){ return amlBar.visible; },
+                
                 _events: [
                     /**
                      * Fired when the panel container is drawn.
@@ -361,7 +380,19 @@ define(function(require, module, exports) {
                      * @param {AMLElement}  e.aml      The aml container.
                      * @param {AMLElement}  e.navHtml  The html element that represents the navigation.
                      */
-                    "draw"
+                    "draw",
+                    /**
+                     * @event activate 
+                     */
+                    "activate",
+                    /**
+                     * @event deactivate 
+                     */
+                    "deactivate",
+                    /**
+                     * @event resize 
+                     */
+                    "resize"
                 ],
                     
                 /**
@@ -375,6 +406,10 @@ define(function(require, module, exports) {
                  */
                 show: show,
                 
+                /**
+                 * Scrolls to a subheading.
+                 */
+                scrollTo: scrollTo,
                 /**
                  * Hides the panel.
                  */

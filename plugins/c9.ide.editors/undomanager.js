@@ -10,7 +10,7 @@ define(function(require, module, exports) {
             var plugin = new Plugin("Ajax.org", main.consumes);
             var emit = plugin.getEmitter();
             
-            var position = -1, mark = null, stack = [];
+            var position = -1, mark = -1, stack = [];
 
             if (options)
                 setState(options);
@@ -55,7 +55,7 @@ define(function(require, module, exports) {
                 position = 0;
                 
                 if (mark < position)
-                    mark = -1;
+                    mark = -2;
                 
                 emit("change");
             }
@@ -64,7 +64,7 @@ define(function(require, module, exports) {
                 stack = stack.slice(0, position + 1);
                 
                 if (mark > position)
-                    mark = -1;
+                    mark = -2;
                 
                 if (!noEvent)
                     emit("change");
@@ -91,7 +91,7 @@ define(function(require, module, exports) {
                     position--;
                 
                 if (mark == idx)
-                    mark = -1;
+                    mark = -2;
                 else if (mark > idx)
                     mark--;
                 
@@ -99,14 +99,13 @@ define(function(require, module, exports) {
             }
             
             function bookmark(index) {
-                mark = index !== undefined ? index : this.position;
+                mark = index !== undefined ? index : position;
                 
                 emit("change");
             }
             
             function isAtBookmark(){
-                return mark !== null && mark == this.position 
-                    || mark === null && position == -1;
+                return mark == position;
             }
             
             function item(idx) {
@@ -117,9 +116,11 @@ define(function(require, module, exports) {
                 return {
                     mark: mark,
                     position: position,
-                    stack: stack.map(function(item) {
-                        return item.getState ? item.getState() : item;
-                    })
+                    stack: stack
+                        .filter(function(item){ return item; })
+                        .map(function(item) {
+                            return item.getState ? item.getState() : item;
+                        })
                 };
             }
             
@@ -133,11 +134,11 @@ define(function(require, module, exports) {
                     return; // guard against broken stack 
                 stack = state.stack;
                 
-                emit("change"); //If you remove this again, change the test
+                emit("change"); // If you remove this again, change the test
             }
             
             function findItem(compressedItem) {
-                return emit("itemFind", {state: compressedItem});
+                return emit("itemFind", { state: compressedItem });
             }
             
             function reset(){
@@ -146,10 +147,12 @@ define(function(require, module, exports) {
 
                 position = -1;
                 stack = [];
-                mark = null;
+                mark = -1;
                 
                 emit("change");
             }
+            
+            plugin.freezePublicAPI.baseclass();
             
             /**
              * The Undo Manager class of Cloud9. Each {@link Document} 
@@ -205,18 +208,14 @@ define(function(require, module, exports) {
              *     }
              *     
              *     var undoManager = new UndoManager();
-             *     undoManager.add(new Item("a", 0)); // data = ["a"]
-             *     undoManager.add(new Item("b", 1)); // data = ["a", "b"]
+             *     undoManager.add(new Item("a").redo()); // data = ["a"]
+             *     undoManager.add(new Item("b").redo()); // data = ["a", "b"]
              * 
              *     undoManager.undo(); // data = ["a"];
              *     undoManager.undo(); // data = [];
              * 
              **/
             plugin.freezePublicAPI({
-                /**
-                 * @ignore
-                 */
-                get stack() { return stack; },
                 /**
                  * The number of items on the stack. This number will stay the
                  * same when using {@link UndoManager#undo} and 

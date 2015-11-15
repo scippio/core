@@ -7,6 +7,7 @@ define(function(require, module, exports) {
         var Plugin = imports.Plugin;
         var Document = imports.Document;
         var ui = imports.ui;
+        var alert = imports["dialog.alert"].show;
         
         var stylesheet = ui.createStylesheet();
         
@@ -40,7 +41,7 @@ define(function(require, module, exports) {
                     }
                     amlTab && amlTab.setAttribute("class", this.names.join(" "));
                 }
-            }
+            };
             
             function initStyleSheet(fg, bg) {
                 var cssClass = plugin.name.replace(/[^a-zA-Z0-9\-_\u00A0-\uFFFF]/g, "-");
@@ -49,10 +50,14 @@ define(function(require, module, exports) {
                 rule = "." + cssClass + ".curbtn .tab_middle, ." 
                      + cssClass + ".curbtn .tab_middle::after, ." 
                      + cssClass + ".curbtn .tab_middle::before";
-                     
-                ui.importStylesheet([
-                    [rule, "background-color:" + (bg || "inherit") + ";"
-                     + "color:" + (fg || "inherit") + ";"]
+                if (!bg) bg = "inherit";
+                if (!fg) fg = "inherit";
+                
+                (
+                    ui.setStyleRule(rule, "background-color", bg, stylesheet) &&
+                    ui.setStyleRule(rule, "foreground-color", fg, stylesheet)
+                ) || ui.importStylesheet([
+                    [rule, "background-color:" + bg + ";" + "color:" + fg + ";"]
                 ], window, stylesheet);
             }
             
@@ -245,7 +250,7 @@ define(function(require, module, exports) {
                 // var lastType = tab.editorType;
                 amlPane.cloud9pane.createEditor(type, function(err, editor) {
                     var info = {};
-                    if (editor.isValid(amlTab.document, info) === false) {
+                    if (editor.isValid(amlTab.cloud9tab.document, info) === false) {
                         alert(
                             info.title || "Could not switch editor",
                             info.head || "Could not switch editor because this document is invalid.",
@@ -253,6 +258,8 @@ define(function(require, module, exports) {
                         );
                         return;
                     }
+                    
+                    var currentValue = plugin.document.value;
             
                     editorType = type;
                     amlTab.setAttribute("type", "editor::" + type);
@@ -260,6 +267,11 @@ define(function(require, module, exports) {
                     if (amlPane.getPage() == amlTab) {
                         amlPane.activepage = -1;
                         amlPane.set(amlTab);
+                        
+                        plugin.document.value = currentValue;
+                        // TODO undo managers for different editors conflict
+                        // however, resetting removes changed state
+                        // plugin.document.undoManager.reset();
                     }
                     
                     callback();
@@ -268,7 +280,9 @@ define(function(require, module, exports) {
             
             // @todo Explain difference with unload in docs
             function close(noAnim) {
+                if (!amlPane.remove) return false;
                 amlPane.remove(amlTab, null, noAnim);
+                return true;
             }
             
             /***** Lifecycle *****/
@@ -277,9 +291,18 @@ define(function(require, module, exports) {
                 load();
             });
             
+            plugin.on("beforeUnload", function(){
+                if (!plugin.meta.$closing) {
+                    if (close())
+                        return false;
+                }
+            });
+            
             plugin.on("unload", function(e) { 
                 closed = true;
                 
+                if (rule)
+                    ui.removeStyleRule(rule, stylesheet);
                 // If there are no more pages left, reset location
                 var last = amlPane.getPages().length === 0;
                 if (last)

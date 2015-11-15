@@ -203,7 +203,8 @@ apf.vbox = function(struct, tagName) {
                 
                 var nodes = this.childNodes;
                 for (var i = 0, l = nodes.length; i < l; i++) {
-                    if ((node = nodes[i]).nodeFunc != apf.NODE_VISIBLE || !node.$amlLoaded) //|| node.visible === false 
+                    var node = nodes[i];
+                    if (node.nodeFunc != apf.NODE_VISIBLE || !node.$amlLoaded) //|| node.visible === false 
                         continue;
 
                     node.$ext.style.textAlign = apf.getStyle(node.$ext, "textAlign") || "left";
@@ -405,6 +406,7 @@ apf.vbox = function(struct, tagName) {
                         this.$altExt.appendChild(this.$ext);
                         this.$altExt.style.boxSizing = "border-box";
                         this.$altExt.style.display = apf.CSS_DISPLAY_FLEX;
+                        this.$altExt.style.flexDirection = this.parentNode.$vbox ? "column" : "row";
                         this.$altExt.style[apf.CSSPREFIX + "BoxOrient"] = "vertical";
                         this.$ext.style[apf.CSS_FLEX_PROP] = 1;
                         var size = this.parentNode.$vbox ? "height" : "width";

@@ -1,7 +1,7 @@
 define(function(require, exports, module) {
     "use strict";
 
-    main.consumes = ["Plugin", "ext", "c9"];
+    main.consumes = ["Plugin", "ext", "c9", "vfs", "metrics"];
     main.provides = ["vfs.ping"];
     return main;
 
@@ -9,6 +9,7 @@ define(function(require, exports, module) {
         var Plugin = imports.Plugin;
         var c9 = imports.c9;
         var ext = imports.ext;
+        var metrics = imports.metrics;
 
         /***** Initialization *****/
 
@@ -60,11 +61,13 @@ define(function(require, exports, module) {
             if (!api) return callback(new Error("Client is offline"));
 
             var start = Date.now();
-            api.ping("ping", function(err) {
-                var took = Date.now() - start;
+            api.ping("serverTime", function(err, response) {
                 if (err) return callback(err);
 
-                callback(null, took);
+                callback(null, {
+                    serverTime: response.serverTime,
+                    total: Date.now() - start
+                });
             });
         }
 

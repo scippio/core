@@ -33,9 +33,10 @@ define(function(require, module, exports) {
         emit.setMaxListeners(100);
         
         var loadFilesAtInit = options.loadFilesAtInit;
+        var ideProviderName = options.ideProviderName || "Cloud9";
         
         var PREFIX = "/////";
-        var XPREVIEW = /(tar\.gz|tar|tgz|zip)$/;
+        var XPREVIEW = /\.(gz|tar|tgz|zip|rar|jar|exe|pyc|pdf)$/;
         
         var unfocussed = true;
         var showTabs = true;
@@ -45,7 +46,7 @@ define(function(require, module, exports) {
         var counter = 1;
         
         var focussedTab, previewTab, previewTimeout;
-        var container, mnuEditors, collapsedMenu;
+        var container, mnuEditors, collapsedMenu, isReady;
         
         // Ref to focusManager - this will be changed later
         focusManager.tabManager = plugin;
@@ -131,7 +132,8 @@ define(function(require, module, exports) {
             function removeTab(e) {
                 if (!e.error) { 
                     var tab = findTab(e.path);
-                    tab && tab.unload();
+                    if (tab)
+                        tab.unload();
                 }
             }
             fs.on("afterUnlink", removeTab);
@@ -140,9 +142,8 @@ define(function(require, module, exports) {
                 var path = e.path;
                 Object.keys(tabs).forEach(function(id) {
                     var tab = tabs[id];
-                    if (tab.path && tab.path.indexOf(path) === 0) {
+                    if (tab.path && tab.path.indexOf(path) === 0)
                         tab.unload();
-                    }
                 });
             });
             // Close a pane when it doesn't open
@@ -173,7 +174,7 @@ define(function(require, module, exports) {
                 if (!editors.findEditor(e.value).fileExtensions.length)
                     openEditor(e.value, true, function(){});
                 else if (focussedTab)
-                    focussedTab.switchEditor(e.value, function(){});
+                    switchEditor(focussedTab, e.value, function(){});
             });
             editors.on("menuShow", function(e) {
                 var group, editor = focussedTab && focussedTab.editor;
@@ -181,13 +182,8 @@ define(function(require, module, exports) {
                     group = node.group;
                     
                     var path = focussedTab && focussedTab.path || "";
-                    var ext = path.substr(path.lastIndexOf(".") + 1);
-                    
                     var type = node.value;
-                    var extensions = editors.findEditor(type).fileExtensions;
-                    var isAvailable = editors.defaultEditor == type 
-                        || extensions.indexOf(ext.toLowerCase()) > -1
-                        || !extensions.length;
+                    var isAvailable = editors.editorSupportsFile(type, path);
         
                     node.setAttribute("disabled", !isAvailable);
                 });
@@ -197,7 +193,6 @@ define(function(require, module, exports) {
             });
             
             // Settings
-            var firstTime = true;
             settings.on("read", function(e) {
                 // Defaults
                 settings.setDefaults("user/tabs", [
@@ -226,12 +221,12 @@ define(function(require, module, exports) {
                 
                 setTimeout(function() {
                     // Only set the state if we're not testing something else
-                    if (options.testing != 2 && firstTime) {
-                        setState(state, firstTime, function(){
+                    if (options.testing != 2 && !isReady) {
+                        setState(state, !isReady, function(){
                             emit.sticky("ready");
                         });
-                        firstTime = false;
                     }
+                    isReady = true;
                     
                     showTabs = settings.getBool("user/tabs/@show");
                     toggleButtons(showTabs);
@@ -454,6 +449,9 @@ define(function(require, module, exports) {
                 emit.sticky("paneCreate", { pane: pane }, pane);
             });
             
+            if (!settings.getBool("user/tabs/@show"))
+                ui.setStyleClass(pane.aml.$ext, "notabs", ["notabs"]);
+            
             changed = true;
             settings.save();
         
@@ -462,8 +460,8 @@ define(function(require, module, exports) {
         
         function updateTitle(tab) {
             document.title = tab && settings.getBool("user/tabs/@title") && tab.title
-                ? tab.title + " - Cloud9"
-                : c9.projectName + " - Cloud9";
+                ? tab.title + " - "  + ideProviderName
+                : c9.projectName + " - "  + ideProviderName;
         }
         
         var lastCorner;
@@ -789,7 +787,10 @@ define(function(require, module, exports) {
                 var pane = list[i], nodes = pane.getTabs();
                 for (var j = nodes.length - 1; j >= 0; j--) {
                     var tab = nodes[j];
-                    if (!soft) tab.unload();
+                    if (!soft) {
+                        tab.meta.$closeSync = true;
+                        tab.unload();
+                    }
                     else {
                         tab.aml.parentNode.removeChild(tab.aml);
                         tab.pane = null;
@@ -1004,6 +1005,11 @@ define(function(require, module, exports) {
                              && t.document.title === options.title));
                      })[0]);
             
+            // prevent opening of same tab twice in non cloned mode
+            // TODO move cloning into ace?
+            if (!tab)
+                tab = findTab(path);
+            
             // Clone Tab
             if (((options.document || 0).meta || 0).cloned) {
                 if (!tab) {
@@ -1063,7 +1069,7 @@ define(function(require, module, exports) {
                 options.document.title = basename(path);
                 options.document.tooltip = path;
             }
-            if (typeof options.value == "string")
+            if (typeof options.value == "string" && !options.newOnError)
                 options.document.value = options.value;
             // if (options.document.filter === undefined)
             //     options.document.filter = true;
@@ -1079,7 +1085,7 @@ define(function(require, module, exports) {
             var doc = options.document;
             var loadFromDisk = path 
               && (!doc || doc.value === undefined) 
-              && options.value === undefined
+              && (options.value === undefined || options.newOnError)
               // autoload to false prevents loading data, used by image editor
               && (!editor || editor.autoload !== false);
             
@@ -1087,7 +1093,11 @@ define(function(require, module, exports) {
             function done(err, value) {
                 tab.classList.remove("loading");
                 
-                if (err) {
+                if (err && options.newOnError) {
+                    tab.document.meta.newfile = true;
+                    value = options.value || "";
+                }
+                else if (err) {
                     tab.classList.add("error");
                     tab.document.meta.error = true;
                     
@@ -1250,7 +1260,7 @@ define(function(require, module, exports) {
             if (XPREVIEW.test(options.path))
                 return;
             
-            if (previewTab && previewTab.path === options.path) {
+            if (!options.editorType && previewTab && previewTab.path === options.path) {
                 // keepPreview();
                 return previewTab;
             }
@@ -1270,8 +1280,8 @@ define(function(require, module, exports) {
                 }
             }
 
-            if (!options.path)
-                throw new Error("No path specified for preview");
+            if (!options.path && !options.editorType)
+                throw new Error("No path or editorType specified for preview");
             
             return createPreview(options, pane, callback);
         }
@@ -1289,17 +1299,19 @@ define(function(require, module, exports) {
             }
             // Else create preview pane
             else if (!previewTimeout || options.immediate) {
+                var doc = options.document || {};
+                doc.meta = {
+                    readonly: true,
+                    preview: true
+                };
+                
                 previewTab = open({ 
                     path: path, 
+                    editorType: options.editorType,
                     active: true, 
                     pane: pane,
                     noanim: true,
-                    document: {
-                        meta: {
-                            readonly: true,
-                            preview: true
-                        }
-                    }
+                    document: doc
                 }, function(err, tab) {
                     // Previewing has already been cancelled
                     if (err || !tab.loaded)
@@ -1333,6 +1345,8 @@ define(function(require, module, exports) {
         }
 
         function cancelPreview(keep) {
+            var lastFocussedTab = focussedTab;
+            
             // Unload last preview tab
             if (lastPreviewTab) {
                 lastPreviewTab.unload();
@@ -1352,11 +1366,13 @@ define(function(require, module, exports) {
                 delete previewTab.document.meta.existing;
             }
             else {
-                previewTab.unload();
+                var tab = previewTab;
+                previewTab = null;
+                tab.unload(); // TODO this focusses the last tab. If there is a speed concern, fix this.
             }
             
             previewTab = null;
-            focussedTab && focussedTab.activate();
+            lastFocussedTab && lastFocussedTab.activate();
             return false;
         }
         
@@ -1390,6 +1406,13 @@ define(function(require, module, exports) {
 
             previewTab = null;
             return true;
+        }
+        
+        function switchEditor(tab, type, callback) {
+            tab.switchEditor(type, function(){
+                emit("switchEditor", { tab: tab });
+                callback.apply(this, arguments);
+            });
         }
         
         /**** Support for state preservation ****/
@@ -1941,7 +1964,17 @@ define(function(require, module, exports) {
             /**
              * 
              */
-            clone: clone
+            clone: clone,
+            
+            /**
+             * 
+             */
+            switchEditor: switchEditor,
+            
+            /**
+             * @ignore
+             */
+            get isReady(){ return isReady; },
         });
         
         register(null, {

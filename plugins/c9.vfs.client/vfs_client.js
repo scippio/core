@@ -1,13 +1,10 @@
-/**
- * Smith.io client
- *
- * @copyright 2013, Ajax.org B.V.
- */
-
 define(function(require, exports, module) {
     "use strict";
     
-    main.consumes = ["Plugin", "auth", "vfs.endpoint", "dialog.error", "dialog.alert"];
+    main.consumes = [
+        "Plugin", "auth", "vfs.endpoint", "dialog.error",
+        "dialog.alert", "error_handler", "metrics"
+    ];
     main.provides = ["vfs"];
     return main;
 
@@ -33,6 +30,8 @@ define(function(require, exports, module) {
         var showError = errorDialog.show;
         var hideError = errorDialog.hide;
         var showAlert = imports["dialog.alert"].show;
+        var errorHandler = imports.error_handler;
+        var metrics = imports.metrics;
         
         var eio = require("engine.io");
         var Consumer = require("vfs-socket/consumer").Consumer;
@@ -40,6 +39,9 @@ define(function(require, exports, module) {
         var protocolVersion = require("kaefer/version").protocol;
         var smith = require("smith");
         var URL = require("url");
+        var DEBUG = options.debug 
+            && (typeof location == "undefined" 
+            || location.href.indexOf("debug=3") > -1);
 
         // The connected vfs unique id
         var id;
@@ -49,12 +51,10 @@ define(function(require, exports, module) {
         var plugin = new Plugin("Ajax.org", main.consumes);
         var emit = plugin.getEmitter();
         
-        // Give reference to vfs to plugin
+        // Give reference to vfs to plugins
         errorDialog.vfs = plugin;
         
         var buffer = [];
-        var installChecked = false;
-        var withInstall = options.withInstall;
         var dashboardUrl = options.dashboardUrl;
         var region, vfsBaseUrl, homeUrl, projectUrl, pingUrl, serviceUrl;
         var eioOptions, connection, consumer, vfs;
@@ -78,11 +78,11 @@ define(function(require, exports, module) {
             if (loaded) return false;
             loaded = true;
             
-            smith.debug = options.debug;
+            smith.debug = DEBUG;
             
             connection = connectClient(connectEngine, {
                 preConnectCheck: preConnectCheck,
-                debug: options.debug
+                debug: DEBUG
             });
             
             connection.on("away", emit.bind(null, "away"));
@@ -94,9 +94,7 @@ define(function(require, exports, module) {
             connection.on("disconnect", onDisconnect);
             connection.on("connect", onConnect);
 
-            reconnect(function(err) {
-                connection.connect();
-            });
+            reconnectNow();
             
             function connectEngine() {
                 if (auth.accessToken) {
@@ -123,6 +121,7 @@ define(function(require, exports, module) {
                 });
                 
                 function disconnect() {
+                    pingUrl = null;
                     reconnect(function(err) {
                         if (err && err.fatal)
                             return;
@@ -188,16 +187,32 @@ define(function(require, exports, module) {
         }
         
         function download(path, filename, isfile) {
-            window.open(vfsUrl(path) + "?download" 
-                + (filename ? "=" + encodeURIComponent(filename) : "")
+            var extraPaths = "";
+            if (Array.isArray(path)) {
+                extraPaths = path;
+                path = path[0];
+                extraPaths = "," + extraPaths.map(function(p) {
+                    return p[0] == path[0] && p != path ? escape(p) : "";
+                }).filter(Boolean).join(",");
+            }
+            window.open(vfsUrl(path) + extraPaths
+                + "?download" 
+                + (filename ? "=" + escape(filename) : "")
                 + (isfile ? "&isfile=1" : ""));
         }
 
+        function reconnectNow() {
+            reconnect(function(_err) {
+                connection.connect();
+            });
+        }
+        
         function reconnect(callback) {
             connection.socket.setSocket(null);
             
             vfsEndpoint.get(protocolVersion, function(err, urls) {
                 if (err) {
+                    metrics.increment("vfs.failed.connect", 1, true);
                     if (!showErrorTimer) {
                         showErrorTimer = setTimeout(function() {
                             showVfsError(showErrorTimerMessage);
@@ -234,11 +249,16 @@ define(function(require, exports, module) {
         function showVfsError(err) {
             switch (err.action) {
                 case "dashboard":
+                    if (/Permission denied \(public key/.test(err.message))
+                        err.message = "SSH permission denied. Please review your workspace configuration.";
                     return showAlert("Workspace Error", "Unable to access your workspace", err.message, function() {
                         window.location = dashboardUrl;
                     });
                 case "reload":
                     lastError = showError(err.message + ". Please reload this window.", -1);
+                    setTimeout(function() {
+                        window.location.reload();
+                    }, (Math.random() * 8) + 2 * 60 * 1000);
                     break;
                 default:
                     lastError = showError(err, -1);
@@ -266,25 +286,18 @@ define(function(require, exports, module) {
             consumer.connect(transport, function(err, _vfs) {
                 // TODO
                 if (err) {
+                    errorHandler.reportError(new Error("Error connecting to VFS", { err: err }));
                     console.error("error connecting to VFS", err);
                     return;
                 }
                 
-                if (!installChecked) {
-                    checkInstall(_vfs, callback);
-                    installChecked = true;
-                }
-                else {
+                if (emit("beforeConnect", { done: callback, vfs: _vfs }) !== false)
                     callback();
-                }
                 
                 function callback(shouldReconnect) {
                     if (shouldReconnect) {
                         vfsEndpoint.clearCache();
-                        reconnect(function(err) {
-                            if (err) return console.log(err);
-                            connection.connect();
-                        });
+                        reconnectNow();
                         return;
                     }
                     
@@ -300,19 +313,6 @@ define(function(require, exports, module) {
             
             consumer.on("error", function(err) {
                 connection.disconnect();
-            });
-        }
-        
-        function checkInstall(vfs, callback) {
-            if (!withInstall)
-                 return callback(false);
-            
-            vfs.stat(options.installPath + "/installed", {}, function(err, stat) {
-                if (err && err.code == "ENOENT") {
-                    emit.sticky("install", { callback: callback, vfs: vfs });
-                }
-                else
-                    callback();
             });
         }
         
@@ -337,7 +337,6 @@ define(function(require, exports, module) {
             
             id = null;
             buffer = [];
-            installChecked = false;
             region = null;
             vfsBaseUrl = null;
             homeUrl = null;
@@ -385,6 +384,7 @@ define(function(require, exports, module) {
             rest: rest,
             download: download,
             url: vfsUrl,
+            reconnect: reconnectNow,
 
             // File management
             resolve: vfsCall.bind(null, "resolve"),
@@ -416,6 +416,7 @@ define(function(require, exports, module) {
             pty: vfsCall.bind(null, "pty"),
             tmux: vfsCall.bind(null, "tmux"),
             execFile: vfsCall.bind(null, "execFile"),
+            killtree: vfsCall.bind(null, "killtree"),
 
             // Extending the API
             use: vfsCall.bind(null, "use"),

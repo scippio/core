@@ -2,6 +2,7 @@
 "use strict";
 
 require("amd-loader");
+require("c9/setup_paths.js");
 var path = require("path");
 var architect = require("architect");
 var optimist = require("optimist");
@@ -20,6 +21,8 @@ if (!module.parent) {
         .boolean("symlink")
         .describe("compress", "Compress output files")
         .boolean("compress")
+        .describe("react-style", "compile react less CSS")
+        .boolean("react-style")
         .describe("dest", "destination folder for the static files")
         .boolean("help")
         .describe("help", "Show command line options.");
@@ -54,6 +57,10 @@ function main(config, settings, options, callback) {
     
     var plugins = require(config)(settings, optimist(process.argv))
         .map(function(plugin) {
+            if (typeof plugin == "string")
+                plugin = { packagePath: plugin };
+            plugin.packaging = true;
+            
             if (plugin.packagePath == "connect-architect/connect") {
                 plugin.packagePath = "./c9.static/connect";
             }
@@ -69,9 +76,21 @@ function main(config, settings, options, callback) {
         })
         .concat({
             consumes: [],
-            provides: ["cdn.build", "db"],
+            provides: ["cdn.build", "db", "health"],
             setup: function(options, imports, register) {
-                register(null, { "cdn.build": {}, "db": {} });
+                register(null, {
+                    "cdn.build": {},
+                    "db": {
+                        "Vfs": {
+                            findAllAndPurge: function(maxVfsAge, callback) {
+                                callback(null, [{}]);
+                            }
+                        }
+                    }, 
+                    "health": { 
+                        addCheck: function() {}
+                    }
+                });
             }
         })
         .filter(function(p) {
@@ -93,6 +112,12 @@ function main(config, settings, options, callback) {
                 app.services.makestatic.getMounts(options.dest, callback);
             else if (options.symlink)
                 app.services.makestatic.symlink(options.dest, callback);
+            else if (options["react-style"])
+                app.services["react.style"].compile(function(err, code) {
+                    if (err) return callback(err);
+                    console.log(code);
+                    callback();
+                });
             else
                 app.services.makestatic.copy(options.dest, callback);
         });

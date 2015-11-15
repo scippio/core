@@ -19,6 +19,7 @@ case "$uname" in
     FreeBSD\ *) os=freebsd ;;
     CYGWIN*) os=windows ;;
     MINGW*) os=windows ;;
+    MSYS_NT*) os=windows ;;
 esac
 case "$uname" in
     *x86_64*) arch=x64 ;;
@@ -90,7 +91,7 @@ console.log('Client Plugins:');
     });
     
 console.log('CLI Plugins:');
-    plugins = require('./configs/cli');
+    plugins = require('./configs/cli')();
     copy.dirs('$SOURCE', '$APPDIR', pluginDirs(plugins), {
         exclude: /^mock$/,
     });

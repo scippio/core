@@ -391,13 +391,14 @@ define(function(require, exports, module) {
             }
             if (hash[key] === value) 
                 return;
-
+            
+            var oldValue = hash[key];
             hash[key] = value;
             
             // Tell everyone this property changed
-            emit(parts.join("/"));
+            emit(parts.join("/"), value, oldValue);
             // Tell everyone it's parent changed
-            emit(query, value);
+            emit(query, value, oldValue);
             
             // Tell everyone the root type changed (user, project, state)
             scheduleAnnounce(parts[0], userData);
@@ -422,19 +423,20 @@ define(function(require, exports, module) {
         function getJson(query) {
             var json = get(query, true);
             
-            if (query.indexOf("json()") == -1)
+            if (query.indexOf("@") == -1 && query.indexOf("json()") == -1)
                 json = json["json()"];
             
-            if (typeof json == "object")
+            if (typeof json === "object")
                 return JSON.parse(JSON.stringify(json));
-                
-            try {
-                var obj = JSON.parse(json);
-                return obj;
+            
+            if (typeof json === "string") {
+                try {
+                    return JSON.parse(json);
+                } catch (e) {}
             }
-            catch (e) {
-                return false;
-            }
+            
+            // do not return null or undefined so that getJson(query).foo never throws
+            return false;
         }
         
         function getBool(query) {

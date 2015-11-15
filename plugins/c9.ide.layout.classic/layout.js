@@ -25,6 +25,7 @@ define(function(require, exports, module) {
         require("text!./themes/default-light-gray.less");
         require("text!./themes/default-light.less");
         require("text!./themes/default-flat-light.less");
+        require("text!./themes/default-flat-dark.less");
         
         /***** Initialization *****/
         
@@ -35,7 +36,7 @@ define(function(require, exports, module) {
         
         var logobar, removeTheme, theme;
         var c9console, menus, tabManager, panels;
-        var userLayout, ignoreTheme, notify;
+        var userLayout, ignoreTheme, notify, svg;
         
         var loaded = false;
         function load(){
@@ -129,6 +130,8 @@ define(function(require, exports, module) {
             window.addEventListener("resize", resize, false);
             window.addEventListener("focus", resize, false);
             
+            setGeckoMask();
+            
             plugin.addOther(function(){
                 window.removeEventListener("resize", resize, false);
                 window.removeEventListener("focus", resize, false);
@@ -142,7 +145,8 @@ define(function(require, exports, module) {
             "dark-gray": 1, 
             "light-gray": 1, 
             "light": 1,
-            "flat-light": 1 
+            "flat-light": 1, 
+            "flat-dark": 1
         };
         
         function updateTheme(noquestion, type) {
@@ -190,6 +194,8 @@ define(function(require, exports, module) {
                     type: type
                 }) !== false;
                 
+                setGeckoMask();
+                
                 if (noquestion) return;
                 
                 if (auto)
@@ -217,7 +223,8 @@ define(function(require, exports, module) {
                 "Click Yes to change the theme or No to keep the current theme.",
                 function(){ // yes
                     ignoreTheme = true;
-                    settings.set("user/general/@skin", kind);
+                    var theme = {"dark": "flat-dark", "light": "flat-light"}[kind];
+                    settings.set("user/general/@skin", theme);
                     updateTheme(false, type);
                     ignoreTheme = false;
                     settings.set("user/general/@propose", question.dontAsk);
@@ -229,6 +236,37 @@ define(function(require, exports, module) {
         }
         
         /***** Methods *****/
+        
+        // There will be a better place for this when theming is fully
+        // abstracted. For now this is a hack
+        function setGeckoMask(){
+            if (!apf.isGecko) return;
+            
+            if (svg) svg.parentNode.removeChild(svg);
+            
+            var isFlatTheme = theme.indexOf("flat") > -1;
+            var img = options.staticPrefix + "/images/" + (
+                isFlatTheme
+                    ? "gecko_mask_flat_light.png"
+                    : "gecko_mask.png");
+            var width = isFlatTheme ? 76 : 46;
+            var height = isFlatTheme ? 26 : 24;
+            var x1 = isFlatTheme ? 1 : 1;
+            var x2 = isFlatTheme ? -40 : -28;
+            
+            document.body.insertAdjacentHTML("beforeend", '<svg xmlns="http://www.w3.org/2000/svg">'
+                + '<defs>'
+                    + '<mask id="tab-mask-left" maskUnits="userSpaceOnUse" maskContentUnits="userSpaceOnUse">'
+                        + '<image width="' + width + 'px" height="' + height + 'px" xlink:href="' + img + '" x="' + x1 + 'px"></image>'
+                    + '</mask>'
+                    + '<mask id="tab-mask-right" maskUnits="userSpaceOnUse" maskContentUnits="userSpaceOnUse">'
+                        + '<image width="' + width + 'px" height="' + height + 'px" xlink:href="' + img + '" x="' + x2 + 'px"></image>'
+                    + '</mask>'
+                + '</defs>'
+            + '</svg>');
+            
+            svg = document.body.lastChild;
+        }
         
         function findParent(obj, where) {
             if (obj.name == "menus") {
@@ -530,6 +568,10 @@ define(function(require, exports, module) {
             activeFindArea = null;
             defaultFindArea = null;
             activating = null;
+            
+            if (svg && svg.parentNode)
+                svg.parentNode.removeChild(svg);
+            svg = null;
         });
         
         /***** Register and define API *****/

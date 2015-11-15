@@ -4,9 +4,11 @@ require([
     "lib/chai/chai", 
     "text!plugins/c9.ide.layout.classic/skins.xml", 
     "events",
-    "text!/static/standalone/skin/default/dark.css"
-], function (chai, skin, events, theme) {
+    "text!/static/standalone/skin/default/dark.css",
+    "lib/architect/architect"
+], function (chai, skin, events, theme, architect) {
     "use strict";
+    chai.Assertion.includeStack = true; // enable stack trace in errors
     var expect = chai.expect;
     var EventEmitter = events.EventEmitter;
 
@@ -106,6 +108,10 @@ require([
                 x.check = function(){};
                 return x;
             })(),
+            "watcher.gui": (function(){
+                var x = new EventEmitter();
+                return x;
+            })(),
             save: (function(){
                 var x = new EventEmitter();
                 x.saveAll = function(c){ c(); };
@@ -115,9 +121,11 @@ require([
             findreplace: {
                 
             },
-            ace: {
-                getElement: function(){}
-            },
+            ace: (function() {
+                var x = new EventEmitter();
+                x.getElement = function(){};
+                return x;
+            })(),
             css: {
                 get packed() { return true; },
                 get packedThemes() { return true; },
@@ -153,6 +161,9 @@ require([
                 prefs.add = function(){};
                 return prefs;
             })(),
+            analytics: {
+                addTrait: function() {}
+            },
             commands: (function(){
                 var commands = {};
                 
@@ -190,6 +201,7 @@ require([
             })(),
             log: {},
             http: {},
+            ui: {},
             api: {
                 stats: {
                     post: function(type, message, cb) {
@@ -302,6 +314,7 @@ require([
                     setCommand: function(){},
                     attachTo: function(){},
                     detach: function(){},
+                    emit: emit,
                     show: function(){ emit("show"); },
                     hide: function(){ emit("hide"); },
                     draw: function draw(area) {
@@ -361,7 +374,8 @@ require([
             })(),
             util: {
                 alert: function() {},
-                escapeXml: function(s) { return s; }
+                escapeXml: function(s) { return s; },
+                stableStringify: function(s) { return JSON.stringify(s); },
             },
             gotoline: {
                 toggle: function(){ }
@@ -392,10 +406,11 @@ require([
             "dialog.fileremove": {show: function() {}},
             "dialog.fileoverwrite": {show: function() {}},
             "dialog.error": {
-                showError: function(msg) {
-                    console.warn(msg);
-                }
+                showError: function(msg) { console.warn(msg); },
+                show: function(msg) { console.warn(msg); },
+                hide: function(msg) { },
             },
+            "installer": { createSession : function(){}, reinstall: function(){}, isInstalled: function(){ return true; } },
             "run.gui": { getElement : function(){} },
             "debugger": {debug: function() {}, stop: function(){}},
             "focusManager": {
@@ -403,9 +418,15 @@ require([
                     
                 }
             },
-            error_handler: {reportError: function(){}},
-            installer: {
-                show: function(){}
+            "metrics": {
+                getLastPing: function() { throw Error("Not implemented"); },
+                getLastest: function() { throw Error("Not implemented"); },
+                log: function() {},
+                increment: function() {}
+            },
+            error_handler: {
+                log: function() {},
+                reportError: function(){}
             },
             proc: {
                 execFile: function() {},
@@ -419,11 +440,54 @@ require([
                     }
                     doc.setValue(newVal);
                 }
-            }
+            },
+            metadata: (function(){
+                var x = new EventEmitter();
+                return x;
+            })(),
+            editors: (function(){
+                var x = new EventEmitter();
+                return x;
+            })(),
+            timeslider: (function(){
+                var x = new EventEmitter();
+                return x;
+            })(),
+            OTDocument: (function(){
+                var x = new EventEmitter();
+                return x;
+            })(),
+            "notification.bubble": (function(){
+                var x = new EventEmitter();
+                return x;
+            })(),
+            "collab": (function(){
+                var x = new EventEmitter();
+                return x;
+            })(),
+            "collab.connect": (function(){
+                var x = new EventEmitter();
+                return x;
+            })(),
+            "collab.workspace": (function(){
+                var x = new EventEmitter();
+                x.users = [];
+                return x;
+            })(),
+            "collab.util": (function(){
+                var x = new EventEmitter();
+                return x;
+            })(),
+            "scm": (function(){
+                var x = new EventEmitter();
+                x.register = function(){};
+                x.unregister = function(){};
+                return x;
+            })(),
         });
     };
     
-    expect.setupArchitectTest = function(config, architect, options) {
+    expect.setupArchitectTest = function(config, _, options) {
         if (options && options.mockPlugins) {
             config.push({
                 consumes: [],
@@ -434,23 +498,22 @@ require([
         architect.resolveConfig(config, function(err, config) {
             /*global describe it before after = */
             if (err) throw err;
-            var app = window.app = architect.createApp(config, function(err, app) {
+            var app = architect.createApp(config, function(err, app) {
                 if (err && err.unresolved && !config.unresolved) {
                     console.warn("Adding mock services for " + err.unresolved);
                     config.unresolved = err.unresolved;
-                    expect.setupArchitectTest(config, architect, {
+                    return expect.setupArchitectTest(config, architect, {
                         mockPlugins: config.unresolved
                     });
-                    return;
                 }
-                
-                describe('app', function() {
-                    it('should load test app', function(done) {
-                        expect(err).not.ok;
-                        done();
+                if (typeof describe == "function") {
+                    describe('app', function() {
+                        it('should load test app', function(done) {
+                            expect(err).not.ok;
+                            done();
+                        });
                     });
-                });
-            
+                }
                 onload && onload();
                 
             });
@@ -462,7 +525,9 @@ require([
                 app.rerun = function() {
                     expect.setupArchitectTest(config, architect);
                 };
+                window.app = app;
             }
+            return app;
         });
     };
         

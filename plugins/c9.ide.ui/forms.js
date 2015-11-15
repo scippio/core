@@ -10,7 +10,7 @@ define(function(require, exports, module) {
         
         /***** Initialization *****/
         
-        function Form(options) {
+        function Form(options, forPlugin) {
             var plugin = new Plugin("Ajax.org", main.consumes);
             var emit = plugin.getEmitter();
 
@@ -21,6 +21,7 @@ define(function(require, exports, module) {
             var maxwidth = options.colmaxwidth || 300;
             var widths = options.widths || {};
             var skins = options.skins || {};
+            var elements = {};
             var container, meta = {};
 
             var debug = location.href.indexOf('menus=1') > -1;
@@ -41,6 +42,9 @@ define(function(require, exports, module) {
 
                 if (options.form)
                     add(options.form);
+                
+                if (forPlugin)
+                    forPlugin.addOther(function(){ plugin.unload(); });
             }
         
             var drawn = false;
@@ -52,7 +56,7 @@ define(function(require, exports, module) {
                 container = new ui.bar({ 
                     htmlNode: htmlNode || document.body,
                     "class"  : options.className,
-                    style: options.style
+                    style: options.style || ""
                 });
                 plugin.addElement(container);
                 
@@ -186,8 +190,11 @@ define(function(require, exports, module) {
                                     ? createBind(options.path) 
                                     : (options.defaultValue || ""),
                                 values: options.values,
-                                skin: "cboffline"
-                                // width: "55"
+                                skin: "cboffline",
+                                onafterchange: function(e) {
+                                    if (options.onchange)
+                                        options.onchange({ value: e.value });
+                                }
                             })
                         ];
                     break;
@@ -198,19 +205,24 @@ define(function(require, exports, module) {
                         }).join("");
                         if (data) model.load("<items>" + data + "</items>");
                         
+                        var dd;
                         childNodes = [
                             new ui.label({ width : width, maxwidth: maxwidth, caption: name + ":" }),
-                            new ui.dropdown({
+                            dd = new ui.dropdown({
                                 model: model,
                                 width: options.width || widths.dropdown,
                                 skin: "black_dropdown",
                                 margin: "-1 0 0 0",
                                 zindex: 100,
-                                onafterchange: options.onchange && function(e) {
-                                    options.onchange({ value: e.value || e.args[2] });
+                                onafterchange: function(e) {
+                                    if (options.path)
+                                        settings.set(options.path, e.value);
+                                    
+                                    if (options.onchange)
+                                        options.onchange({ value: e.value || e.args[2] });
                                 }, 
-                                value: options.path 
-                                    ? createBind(options.path) //{settings.model}::
+                                value: options.path
+                                    ? settings.get(options.path)
                                     : (options.defaultValue || ""),
                                 each: options.each || "[item]",
                                 caption: options.caption || "[text()]",
@@ -218,6 +230,10 @@ define(function(require, exports, module) {
                                 "empty-message" : options["empty-message"]
                             })
                         ];
+                        
+                        settings.on(options.path, function(){
+                            dd.setValue(settings.get(options.path));
+                        }, plugin);
                     break;
                     case "spinner":
                         childNodes = [
@@ -227,9 +243,13 @@ define(function(require, exports, module) {
                                 value: options.path 
                                     ? createBind(options.path) 
                                     : (options.defaultValue || ""),
-                                min: options.min,
-                                max: options.max,
-                                realtime: typeof options.realtime !== "undefined" ? options.realtime : 1
+                                min: options.min || 0,
+                                max: options.max || 10,
+                                realtime: typeof options.realtime !== "undefined" ? options.realtime : 1,
+                                onafterchange: function(e) {
+                                    if (options.onchange)
+                                        options.onchange({ value: e.value });
+                                }, 
                             })
                         ];
                     break;
@@ -241,16 +261,24 @@ define(function(require, exports, module) {
                                     : (options.defaultCheckboxValue || ""),
                                 width: width, maxwidth: maxwidth, 
                                 label: name + ":",
-                                skin: "checkbox_black"
+                                skin: "checkbox_black",
+                                onafterchange: function(e) {
+                                    if (options.onchange)
+                                        options.onchange({ value: e.value, type: "checkbox" });
+                                }, 
                             }),
                             new ui.spinner({
                                 width: options.width || widths["checked-spinner"],
                                 value: options.path 
                                     ? createBind(options.path) 
                                     : (options.defaultValue || ""),
-                                min: options.min,
-                                max: options.max,
-                                realtime: typeof options.realtime !== "undefined" ? options.realtime : 1
+                                min: options.min || 0,
+                                max: options.max || 10,
+                                realtime: typeof options.realtime !== "undefined" ? options.realtime : 1,
+                                onafterchange: function(e) {
+                                    if (options.onchange)
+                                        options.onchange({ value: e.value, type: "spinner" });
+                                }, 
                             })
                         ];
                     break;
@@ -262,7 +290,11 @@ define(function(require, exports, module) {
                                     : (options.defaultValue || ""),
                                 width: options.width || widths["checked-single"], 
                                 label: name,
-                                skin: "checkbox_black"
+                                skin: "checkbox_black",
+                                onafterchange: function(e){
+                                    if (options.onchange)
+                                        options.onchange({ value: e.value });
+                                } 
                             })
                         ];
                     break;
@@ -285,7 +317,7 @@ define(function(require, exports, module) {
                         childNodes = [
                             new ui.label({ width : width, maxwidth: maxwidth, caption: name + ":" }),
                             new ui.password({
-                                //skin     : "codebox",
+                                skin: skins.textbox || "searchbox",
                                 width: options.width || widths.password,
                                 value: options.path 
                                     ? createBind(options.path) 
@@ -367,6 +399,29 @@ define(function(require, exports, module) {
                             })
                         ];
                     break;
+                    case "textarea-row":
+                        // TODO this should be ace
+                        node = new ui.vsplitbox({
+                            options: options,
+                            height: options.rowheight || rowheight,
+                            edge: options.edge || edge,
+                            type: options.type,
+                            childNodes: [
+                                new ui.label({ height: 40, caption: name + ":" }),
+                                new ui.textarea({
+                                    width: options.width || widths.textarea,
+                                    height: options.height || 200,
+                                    style: options.fixedFont
+                                        ? "font-family: Monaco, Menlo, 'Ubuntu Mono', Consolas, source-code-pro, monospace; font-size: 10px"
+                                        : "",
+                                    value: options.path 
+                                        ? createBind(options.path) 
+                                        : (options.defaultValue || ""),
+                                    realtime: typeof options.realtime !== "undefined" ? options.realtime : 1
+                                })
+                            ]
+                        });
+                    break;
                     case "custom":
                         node = options.node;
                     break;
@@ -385,8 +440,10 @@ define(function(require, exports, module) {
                     });
                 }
                 
-                if (options.name)
-                    node.setAttribute("id", options.name);
+                if (options.id || options.name) {
+                    node.setAttribute("id", options.id || options.name);
+                    elements[node.name] = node;
+                }
                 
                 ui.insertByIndex(heading.container, node, position, foreign);
 
@@ -397,22 +454,41 @@ define(function(require, exports, module) {
             
             function update(items) {
                 items.forEach(function(item) {
-                    var el = plugin.getElement(item.id);
-                    switch(el.type) {
+                    var el = elements[item.id];
+                    switch (el.type) {
                         case "dropdown":
                             var dropdown = el.lastChild;
                             
-                            var data = item.items.map(function(item) {
-                                return "<item value='" + item.value 
-                                  + "'><![CDATA[" + item.caption + "]]></item>";
-                            }).join("");
-                            if (data) 
-                                dropdown.$model.load("<items>" + data + "</items>");
-                            if (item.value)
+                            if (item.items) {
+                                var data = item.items.map(function(item) {
+                                    return "<item value='" + item.value 
+                                      + "'><![CDATA[" + item.caption + "]]></item>";
+                                }).join("");
+                                if (data) {
+                                    setTimeout(function(){
+                                        dropdown.$model.load("<items>" + data + "</items>");
+                                        
+                                        setTimeout(function(){
+                                            var value = item.value || dropdown.value;
+                                            dropdown.value = -999;
+                                            dropdown.setAttribute("value", value);
+                                        });
+                                    });
+                                }
+                            }
+                            else if (item.value) {
                                 dropdown.setAttribute("value", item.value);
+                            }
                         break;
                         default:
-                            el.lastChild.setAttribute('value', item.value);
+                            if ("value" in item)
+                                el.lastChild.setAttribute('value', item.value);
+                            if ("onclick" in item)
+                                el.lastChild.onclick = item.onclick;
+                            if ("visible" in item)
+                                el.lastChild.setAttribute("visible", item.visible)
+                            if ("zindex" in item)
+                                el.lastChild.setAttribute("zindex", item.zindex)
                         break;
                     }
                 })
@@ -425,9 +501,13 @@ define(function(require, exports, module) {
                     container.parentNode = htmlNode;
                     htmlNode = htmlNode.$int;
                 }
-                
-                htmlNode.insertBefore(container.$ext, beforeNode || null);
-                emit("show");
+                // if we have apf node, make sure apf child-parent links do not get broken
+                if (htmlNode.host) {
+                    htmlNode.host.insertBefore(container, beforeNode && beforeNode.host);
+                } else {
+                    htmlNode.insertBefore(container.$ext, beforeNode || null);
+                }
+                show();
             }
             
             function detach(){
@@ -438,6 +518,11 @@ define(function(require, exports, module) {
             function toJson(amlNode, json) {
                 if (!json)
                     json = {};
+                
+                if (!drawn) {
+                    draw();
+                    hide();
+                }
                 
                 (amlNode || container).childNodes.forEach(function(row) {
                     if (row.localName == 'bar')

@@ -3,7 +3,7 @@ module.exports = function(manifest, installPath, settingDir) {
     var fs = require("fs");
     
     if (typeof installPath != "string") {
-        installPath = process.platform == "darwin"
+        installPath = process.platform == "darwin" && false // disabled for sdk
             ? "/Library/Application Support/Cloud9"
             : path.join(process.env.HOME, ".c9");
     }
@@ -47,9 +47,9 @@ module.exports = function(manifest, installPath, settingDir) {
     // config.update.port = "8888"
     // config.update.host = "http"
     
-    config.nodeBin = [process.platform == "win32"
-        ? path.join(process.execPath, "..\\node.exe")
-        : path.join(installPath, "node/bin/node")];
+    // config.nodeBin = [process.platform == "win32"
+    //     ? path.join(process.execPath, "..\\node.exe")
+    //     : path.join(installPath, "node/bin/node")];
     config.bashBin = process.platform == "win32"
         ? process.env.C9_BASH_BIN || "C:\\cygwin\\bin\\bash.exe"
         : "/bin/bash";

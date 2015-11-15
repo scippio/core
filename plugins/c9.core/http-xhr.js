@@ -29,6 +29,8 @@ define(function(require, module, exports) {
             var timeout = options.hasOwnProperty("timeout") ? options.timeout : 10000;
             var async = options.sync !== true;
             var parsedUrl = parseUrl(url, options.query);
+            if (contentType === "application/json")
+                headers.Accept = headers.Accept || "application/json";
             
             if (options.username) {
                 headers.Authorization = "Basic " + btoa(options.username + ":" + options.password);
@@ -64,7 +66,7 @@ define(function(require, module, exports) {
                         return done(new Error("Could not serialize body as json"));
                     }
                 }
-                if (contentType.indexOf("application/x-www-form-urlencoded") === 0) {
+                else if (contentType.indexOf("application/x-www-form-urlencoded") === 0) {
                     body = qs.stringify(body);
                 }
                 else if (["[object File]", "[object Blob]"].indexOf(Object.prototype.toString.call(body)) > -1) {
@@ -73,17 +75,20 @@ define(function(require, module, exports) {
                 }
                 else {
                     body = body.toString();
-                }    
+                }
+            }
+            
+            if (options.withCredentials) {
+                xhr.withCredentials = true;
             }
             
             var timer;
-            var timedout = false;
             if (timeout) {
                 timer = setTimeout(function() {
-                    timedout = true;
                     xhr.abort();
                     var err = new Error("Timeout");
                     err.code = "ETIMEOUT";
+                    err.data = {url: url, query: options.query};
                     done(err);
                 }, timeout);
             }
@@ -100,21 +105,18 @@ define(function(require, module, exports) {
                 var res = {
                     body: xhr.responseText,
                     status: xhr.status,
-                    headers: parseHeaders(xhr.getAllResponseHeaders())
+                    headers: parseHeaders(xhr.getAllResponseHeaders()),
+                    $reqHeaders: headers // TODO remove when bug in readFileWithMetadata is fixed 
                 };
                 
-                var data;
-                switch (options.overrideMimeType || res.headers["content-type"]) {
-                    case "application/json":
-                        try {
-                            data = JSON.parse(xhr.responseText);
-                        } catch (e) {
-                            return done(e); 
-                        }
-                        break;
-                    default:
-                        data = xhr.responseText;
-                        
+                var data = xhr.responseText;
+                var contentType = options.overrideMimeType || res.headers["content-type"] || "";
+                if (contentType.indexOf("application/json") === 0) {
+                    try {
+                        data = JSON.parse(data);
+                    } catch (e) {
+                        return done(e);
+                    }
                 }
                 
                 if (this.status > 299) {

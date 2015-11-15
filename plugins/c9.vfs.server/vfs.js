@@ -128,6 +128,7 @@ Vfs.prototype._watchConnection = function(pid) {
     function onStderr(data) {
         // @todo collab stderr logs
         console.log("VFS stderr [" + pid + "]: " + data);
+        that.logger.log({message: data.toString(), pid: pid});
     }
     
     master.on("disconnect", onError);
@@ -146,15 +147,15 @@ Vfs.prototype._createEngine = function(vfs, options) {
     var that = this;
     
     var engine = new eio.Server({
-        pingTimeout: 3000,
-        pingInterval: 15000,
+        pingTimeout: 60000,
+        pingInterval: 25000,
         transports: ["polling", "websocket"],
         allowUpgrades: true,
         cookie: false
     });
     
     this.keepAliveTimer = null;
-    var listeningForEIOSocketClose = false;
+    var listeningForEIOSocketEvents = false;
     
     this.workers = 0;
     
@@ -177,26 +178,29 @@ Vfs.prototype._createEngine = function(vfs, options) {
             /* Add listener to core Engine.io socket used for user communication
                 to track and log all reasons causing it to close so when users
                 complain about disconnects we can investigate what's causing them */
-            var listenForEIOSocketClose = function (eioSocket) {
-                if (!eioSocket || listeningForEIOSocketClose) return;
+            var listenForEIOSocketEvents = function (eioSocket) {
+                if (!eioSocket || listeningForEIOSocketEvents) return;
                 eioSocket.once("close", function (reason, description) {
                     var logMetadata = {message: "Socket closed", collab: options.collab, reason: reason, description: description, id: that.id, sid: socket.id, pid: that.pid};
-                    console.log(logMetadata);
                     that.logger.log(logMetadata);
-                    listeningForEIOSocketClose = false;
+                    listeningForEIOSocketEvents = false;
                 });
-                listeningForEIOSocketClose = true;
+                eioSocket.on("upgrade", function (transport) {
+                    var newTransportName = transport && transport.name ? transport.name : "unknown";
+                    var logMetadata = {message: "Socket transport changed", collab: options.collab, type: newTransportName,  id: that.id, sid: socket.id, pid: that.pid};
+                    that.logger.log(logMetadata);
+                });
+                listeningForEIOSocketEvents = true;
             };
             socket.socket.once('away', function() {
-                listenForEIOSocketClose(socket.socket.socket);
+                listenForEIOSocketEvents(socket.socket.socket);
             });
             socket.socket.once('back', function() {
-                listenForEIOSocketClose(socket.socket.socket);
+                listenForEIOSocketEvents(socket.socket.socket);
             });
         }
         socket.on('disconnect', function (err) {
             var logMetadata = {message: "Socket disconnected", collab: options.collab, err: err, id: that.id, sid: socket.id, pid: that.pid};
-            console.log(logMetadata);
             that.logger.log(logMetadata);
         });
         
@@ -217,9 +221,7 @@ Vfs.prototype._createEngine = function(vfs, options) {
         }
 
         worker.on("disconnect", function() {
-            var logMetadata = {collab: options.collab, id: that.id, sid: socket.id, pid: that.pid};
-            console.log("VFS socket disconnect:", logMetadata);
-            logMetadata.message = "VFS socket disconnect";
+            var logMetadata = {message: "VFS socket disconnect", collab: options.collab, id: that.id, sid: socket.id, pid: that.pid};
             that.logger.log(logMetadata);
             if (options.collab) {
                 if (collabApi)

@@ -60,7 +60,7 @@ define(function(require, exports, module) {
                 group: "ignore",
                 bindKey: {
                     win: "F12|Ctrl-Shift-I",
-                    mac: "F12|Cmd-`|Cmd-R|Cmd-Option-I|Cmd-H|Cmd-M"
+                    mac: "F12|Cmd-`|Cmd-Option-I|Cmd-H|Cmd-M"
                 },
                 exec: function(){},
                 passEvent: true,
@@ -69,8 +69,8 @@ define(function(require, exports, module) {
                 name: "cancelBrowserAction",
                 group: "ignore",
                 bindKey: {
-                    mac: "Command-S",
-                    win: "Ctrl-S|Alt-Left|Alt-Right",
+                    mac: "Cmd-S|Cmd-R|Cmd-[|Cmd-]",
+                    win: "Ctrl-S|Ctrl-R|Alt-Left|Alt-Right",
                     position: -10000
                 },
                 exec: function(){},
@@ -104,6 +104,8 @@ define(function(require, exports, module) {
         }, 500);
         
         function exec(command, editor, args, e) {
+            var sCommand = command;
+            
             if (!editor || editor.fake)
                 editor = emit("getEditor");
             
@@ -119,14 +121,16 @@ define(function(require, exports, module) {
             if (typeof command === 'string')
                 command = commands[command];
             
-            if (!command)
+            if (!command) {
+                console.warn("Could not find command ", sCommand);
                 return false;
+            }
             
             if (command.isAvailable && !command.isAvailable(editor, args, e))
-                return; //Disable commands for other contexts
+                return; // Disable commands for other contexts
 
             if (command.findEditor)
-                editor = command.findEditor(editor);
+                editor = command.findEditor(editor, e);
             
             if (editor && editor.$readOnly && !command.readOnly)
                 return false;
@@ -245,7 +249,7 @@ define(function(require, exports, module) {
         
         function setDefault(name, keys) {
             var command = commands[name];
-            
+            if (!command) return;
             // If bind key is not yet overridden by a custom one
             if (plugin.commandManager[name] == command.bindKey[platform])
                 bindKey(keys[platform], command);
@@ -256,19 +260,21 @@ define(function(require, exports, module) {
         function bindKey(key, command, asDefault) {
             removeCommand(command, null, true);
             
-            if (!key || !command)
+            if (!command)
                 return;
             
-            command.bindKey = {
-                position: command.originalBindKey.position
-            };
+            if (typeof key == "string" || !key) {
+                command.bindKey = {};
+                command.bindKey[commandManager.platform] = key;
+            } else
+                command.bindKey = key;
             
-            command.bindKey[commandManager.platform] = key;
+            if (command.bindKey.position == undefined)
+                command.bindKey.position = command.originalBindKey.position;
             
-            commandManager.bindKey(key, command, asDefault);
-            
-            plugin.commandManager
-                .setProperty(command.name, key);
+            commandManager.bindKey(command.bindKey, command, asDefault);
+            plugin.commandManager.setProperty(command.name, 
+                command.bindKey[commandManager.platform]);
         }
         
         function findKey(key, scope) {
@@ -286,16 +292,12 @@ define(function(require, exports, module) {
             return commands;
         }
         
-        function reset(noReload){
+        function reset(noReload, toDefault){
             commandManager.commandKeyBinding = {};
             
             Object.keys(commands).forEach(function(name) {
                 var cmd = commands[name];
-                var key = cmd.bindKey && cmd.bindKey[platform];
-                if (key)
-                    bindKey(key, cmd);
-                else
-                    delete plugin.commandManager[name];
+                bindKey(toDefault ? cmd.originalBindKey : cmd.bindKey, cmd);
             });
             
             if (noReload)
@@ -310,25 +312,18 @@ define(function(require, exports, module) {
         
         function getExceptionList(){
             // Whitelist certain IDE keys for use from terminal and preview
-            return [{
-                    bindKey: { win: "F12|Ctrl-Shift-I", mac: "F12|Cmd-`|Cmd-R|Cmd-Option-I|Cmd-H|Cmd-M" },
-                    name: "passKeysToBrowser",
-                    passEvent: true,
-                    exec: function(){}
-                },
+            return [
                 {
                     bindKey: { win: null, mac: "Command-O" },
                     name: "navigateAlt",
                     passEvent: true,
                     exec: function(){}
                 },
-                commands.togglepreferences,
                 commands.openpreferences,
                 commands.passKeysToBrowser,
                 commands.find,
                 commands.openterminal,
                 commands.navigate,
-                commands.navigate_altkey,
                 commands.searchinfiles,
                 commands.close_term_pane,
                 commands.closeallbutme,
@@ -347,10 +342,10 @@ define(function(require, exports, module) {
                 commands.previoustab,
                 commands.nextpane,
                 commands.previouspane,
-                commands.exit || {},
-                commands.hidesearchreplace || {},
-                commands.hidesearchinfiles || {},
-                commands.toggleconsole || {},
+                commands.exit,
+                commands.hidesearchreplace,
+                commands.hidesearchinfiles,
+                commands.toggleconsole,
                 commands.runlast,
                 commands.run,
                 commands.resume,
@@ -363,8 +358,19 @@ define(function(require, exports, module) {
                 commands.new,
                 commands.build,
                 commands.switchterminal,
-                commands.findinfiles
-            ];
+                commands.findinfiles,
+                commands.tab1,
+                commands.tab2,
+                commands.tab3,
+                commands.tab4,
+                commands.tab5,
+                commands.tab6,
+                commands.tab7,
+                commands.tab8,
+                commands.tab9,
+                commands.tab0,
+                commands.reopenLastTab,
+            ].filter(Boolean);
         }
         
         function getExceptionBindings(){

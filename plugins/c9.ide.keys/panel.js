@@ -1,6 +1,7 @@
 define(function(require, exports, module) {
     main.consumes = [
-        "Panel", "ui", "menus", "panels", "commands", "tabManager", "layout"
+        "Panel", "ui", "menus", "panels", "commands", "tabManager", "layout",
+        "settings"
     ];
     main.provides = ["commands.panel"];
     return main;
@@ -13,6 +14,7 @@ define(function(require, exports, module) {
         var panels = imports.panels;
         var layout = imports.layout;
         var commands = imports.commands;
+        var settings = imports.settings;
         
         var markup = require("text!./panel.xml");
         var search = require('../c9.ide.navigate/search');
@@ -24,7 +26,6 @@ define(function(require, exports, module) {
         var plugin = new Panel("Ajax.org", main.consumes, {
             index: options.index || 300,
             caption: "Commands",
-            elementName: "winCommands",
             minWidth: 150,
             autohide: true,
             where: options.where || "left"
@@ -34,11 +35,7 @@ define(function(require, exports, module) {
         var winCommands, txtFilter, tree, ldSearch;
         var lastSearch;
         
-        var loaded = false;
         function load(){
-            if (loaded) return false;
-            loaded = true;
-            
             plugin.setCommand({
                 name: "commands",
                 hint: "search for a command and execute it",
@@ -51,7 +48,7 @@ define(function(require, exports, module) {
             });
             
             // Menus
-            menus.addItemByPath("Goto/Goto Command...", new apf.item({ 
+            menus.addItemByPath("Goto/Goto Command...", new ui.item({ 
                 command: "commands" 
             }), 250, plugin);
         }
@@ -69,7 +66,7 @@ define(function(require, exports, module) {
             
             var treeParent = plugin.getElement("commandsList");
             txtFilter = plugin.getElement("txtFilter");
-            winCommands = plugin.getElement("winCommands");
+            winCommands = options.aml;
 
             // Create the Ace Tree
             tree = new Tree(treeParent.$int);
@@ -131,6 +128,7 @@ define(function(require, exports, module) {
             txtFilter.ace.on("input", function(e) {
                 var val = txtFilter.getValue();
                 filter(val);
+                settings.set("state/commandPanel/@value", val);
             });
             
             function onblur(e) {
@@ -155,8 +153,10 @@ define(function(require, exports, module) {
             setTimeout(function(){
                 // Assign the dataprovider
                 tree.setDataProvider(ldSearch);
-                
                 tree.selection.$wrapAround = true;
+                var val = settings.get("state/commandPanel/@value");
+                if (val)
+                    txtFilter.ace.setValue(val);
             }, 200);
         }
         
@@ -230,7 +230,6 @@ define(function(require, exports, module) {
             tabs.preview({ cancel: true });
         });
         plugin.on("unload", function(){
-            loaded = false;
             drawn = false;
         });
         

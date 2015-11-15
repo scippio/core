@@ -59,12 +59,20 @@ define(function(require, exports, module) {
         
         var defaults = {
             "flat-light" : ["#eaf0f7", "#000000", "#bed1e3", false], 
+            "flat-dark"  : ["#153649", "#FFFFFF", "#515D77", true],
             "light" : ["rgb(248, 248, 231)", "#000000", "rgb(137, 193, 253)", false], 
             "light-gray" : ["rgb(248, 248, 231)", "#000000", "rgb(137, 193, 253)", false], 
             "dark"  : ["#153649", "#FFFFFF", "#515D77", true],
             "dark-gray"  : ["#153649", "#FFFFFF", "#515D77", true]
         };
 
+        var themeName;
+        if (options.defaults) {
+            for (themeName in options.defaults) {
+                defaults[themeName] = options.defaults[themeName];
+            }
+        }
+                
         // Import the CSS
         ui.insertCss(require("text!./style.css"), options.staticPrefix, handle);
         
@@ -251,10 +259,10 @@ define(function(require, exports, module) {
                     ["foregroundColor", colors[1]],
                     ["selectionColor", colors[2]],
                     ["antialiasedfonts", colors[3]],
-                    ["fontfamily", "Ubuntu Mono, Menlo, Consolas, monospace"], //Monaco, 
+                    ["fontfamily", "Ubuntu Mono, Menlo, Consolas, monospace"], // Monaco, 
                     ["fontsize", "12"],
                     ["blinking", "false"],
-                    ["scrollback", "1000"]
+                    ["scrollback", 10000]
                 ]);
                 
                 setSettings();
@@ -348,6 +356,13 @@ define(function(require, exports, module) {
                     ui.setStyleRule(".terminal .ace_content", "opacity", "0.5");
                 }
             });
+        });
+        handle.on("unload", function(){
+            mnuTerminal = null;
+            lastEditor = null;
+            lastTerminal = null;
+            shownDotsHelp = null;
+            installPrompted = null;
         });
         
         handle.draw = function(){
@@ -651,23 +666,28 @@ define(function(require, exports, module) {
             }
             
             function createTerminal(session, state) {
+                var queue = "";
+                var warned = false;
+                var timer = null;
+                var initialConnect = true;
+
                 function send(data) {
                     if (!(c9.status & c9.NETWORK))
                         return warnConnection();
                     
                     emit("input", { data: data, session: session });
+                    queue += data;
                     
-                    if (!queue)
-                        setTimeout(function() {
+                    if (!timer) {
+                        timer = setTimeout(function() {
+                            timer = null;
                             if (!session.connected)
-                                return warnConnection();
-
+                                return initialConnect || warnConnection();
                             // Send data to stdin of tmux process
                             session.pty.write(queue);
                             queue = "";
                         }, 1);
-                    
-                    queue += data;
+                    }
                 }
                 
                 function warnConnection() {
@@ -685,9 +705,7 @@ define(function(require, exports, module) {
                 
                 // Create the terminal renderer and monitor
                 var terminal = new Aceterm(0, 0, send);
-                var queue = "";
-                var warned = false;
-
+                
                 session.terminal = terminal;
                 session.monitor = terminal.monitor;
                 session.aceSession = terminal.aceSession;
@@ -730,6 +748,11 @@ define(function(require, exports, module) {
                                 tab: session.tab 
                             });
                             loadHistory(session);
+                            initialConnect = false;
+                            if (queue) {
+                                session.pty.write(queue);
+                                queue = "";
+                            }
                         }
                     });
                 });
@@ -738,6 +761,8 @@ define(function(require, exports, module) {
                 terminal.on("afterWrite", function() {
                     clearTmuxBorders(terminal);
                 });
+                
+                session.getEmitter().sticky("terminalReady", session);
             }
             
             /***** Lifecycle *****/
@@ -748,6 +773,9 @@ define(function(require, exports, module) {
                 
                 session.__defineGetter__("tab", function(){ return doc.tab });
                 session.__defineGetter__("doc", function(){ return doc });
+                session.__defineGetter__("defaultEditor", function(){ 
+                    return settings.getBool("user/terminal/@defaultEnvEditor");
+                });
                 
                 session.attach = function(){
                     if (session.aceSession && aceterm) {
@@ -776,7 +804,7 @@ define(function(require, exports, module) {
                               + "installed. Would you like to open the installer "
                               + "to update to the latest version?",
                             function(){ // Yes
-                                installer.show();
+                                installer.reinstall("Cloud9 IDE");
                             },
                             function(){ // No
                                 // Do nothing
@@ -887,11 +915,19 @@ define(function(require, exports, module) {
                 function setTabColor(){
                     var bg = settings.get("user/terminal/@backgroundColor");
                     var shade = util.shadeColor(bg, 0.75);
-                    doc.tab.backgroundColor = shade.isLight ? bg : shade.color;
+                    var skinName = settings.get("user/general/@skin");
+                    var isLight = ~skinName.indexOf("flat") || shade.isLight;
+                    doc.tab.backgroundColor = isLight ? bg : shade.color;
                     
-                    if (shade.isLight) {
-                        doc.tab.classList.remove("dark");
-                        container.className = "c9terminalcontainer";
+                    if (isLight) {
+                        if (~skinName.indexOf("flat") && !shade.isLight) {
+                            doc.tab.classList.add("dark");
+                            container.className = "c9terminalcontainer flat-dark";
+                        }
+                        else {
+                            doc.tab.classList.remove("dark");
+                            container.className = "c9terminalcontainer";
+                        }
                     }
                     else {
                         doc.tab.classList.add("dark");

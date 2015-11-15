@@ -738,6 +738,8 @@ apf.menu = function(struct, tagName){
      * @param {String} value  The value of the item to select.
      */
     this.select = function(group, value){
+        this.selectedValue = value;
+        
         var nodes = this.childNodes;
         var i, l = nodes.length;
         for (i = 0; i < l; i++) {
@@ -938,7 +940,7 @@ apf.menu = function(struct, tagName){
         // workaround for a chrome bug where clicking on shadow clciks on contents of overflown element
         this.$ext.addEventListener("mouseup", function(e) {
             var rect = this.getBoundingClientRect();
-            if (e.clientY > rect.bottom) {
+            if (e.clientY > rect.bottom && rect.height) {
                 e.stopPropagation();
                 e.preventDefault();
             }
@@ -954,10 +956,19 @@ apf.menu = function(struct, tagName){
     };
     
     this.$initChildren = function() {
-        this.childNodes.forEach(function(amlNode) {
+        var ch = this.childNodes;
+        for (var i = 0; i < ch.length; i++) {
+            var amlNode = ch[i];
             if (!amlNode.$amlLoaded)
                 amlNode.dispatchEvent("DOMNodeInsertedIntoDocument");
-        });
+            // sometimes DOMNodeInsertedIntoDocument event handler puts $ext at the end of the popup
+            if (!amlNode.previousSibling || !amlNode.previousSibling.$ext || !amlNode.$ext)
+                continue;
+            if (amlNode.$ext.previousSibling == amlNode.previousSibling.$ext)
+                continue;
+            if (amlNode.$ext.parentNode == amlNode.previousSibling.$ext.parentNode)
+                amlNode.$ext.parentNode.insertBefore(amlNode.$ext, amlNode.previousSibling.$ext.nextSibling);
+        }
     };
     var insertBefore = this.insertBefore;
     this.insertBefore = function(node, beforeNode) {
@@ -1521,8 +1532,8 @@ apf.item  = function(struct, tagName){
         //@todo Anim effect here?
         
         this.dispatchEvent("click", {
-            xmlContext : this.parentNode.xmlReference,
-            opener     : this.parentNode.opener
+            xmlContext : (this.parentNode || 0).xmlReference,
+            opener     : (this.parentNode || 0).opener
         });
         
         

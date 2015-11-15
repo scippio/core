@@ -12,23 +12,25 @@ define(function(require, exports, module) {
         var c9 = imports.c9;
         var util = imports.util;
         var Panel = imports.Panel;
-        var fs = imports.fs;
         var panels = imports.panels;
         var settings = imports.settings;
-        var layout = imports.layout;
+        var fs = imports.fs;
         var ui = imports.ui;
-        var menus = imports.menus;
         var tabs = imports.tabManager;
+        var menus = imports.menus;
+        var layout = imports.layout;
         var clipboard = imports.clipboard;
+        var commands = imports.commands;
         var watcher = imports.watcher;
         var prefs = imports.preferences;
-        var fsCache = imports["fs.cache"];
         var alert = imports["dialog.alert"].show;
+        var fsCache = imports["fs.cache"];
         var confirmRemove = imports["dialog.fileremove"].show;
         var confirmRename = imports["dialog.fileoverwrite"].show;
         var showError = imports["dialog.error"].show;
         
         var Tree = require("ace_tree/tree");
+        var Tooltip = require("ace_tree/tooltip");
         var TreeEditor = require("ace_tree/edit");
         var markup = require("text!./tree.xml");
         
@@ -43,7 +45,7 @@ define(function(require, exports, module) {
         var plugin = new Panel("Ajax.org", main.consumes, {
             index: options.index || 100,
             caption: "Workspace",
-            elementName: "winFilesViewer",
+            panelCSSClass: "workspace_files",
             minWidth: 130,
             where: options.where || "left"
         });
@@ -99,6 +101,15 @@ define(function(require, exports, module) {
                 if (panels.isActive("tree"))
                     tree && tree.resize();
             });
+            commands.addCommand({ 
+                name: "focusTree", 
+                // shortcut can be modified here 
+                bindKey: { mac: "Shift-Esc", win: "Shift-Esc"},
+                exec: function() { 
+                    panels.activate("tree"); 
+                    plugin.focus();
+                }
+            }, plugin);
             
             // On Ready Resize initially
             c9.once("ready", function(){ tree && tree.resize(); });
@@ -201,7 +212,7 @@ define(function(require, exports, module) {
             layout.on("eachTheme", function(e){
                 var height = parseInt(ui.getStyleRule(".filetree .tree-row", "height"), 10) || 22;
                 fsCache.model.rowHeightInner = height;
-                fsCache.model.rowHeight = height + 1;
+                fsCache.model.rowHeight = height;
                 
                 if (e.changed && tree) (tree).resize(true);
             });
@@ -217,7 +228,7 @@ define(function(require, exports, module) {
             
             // Fetch UI elements
             container = plugin.getElement("container");
-            winFilesViewer = plugin.getElement("winFilesViewer");
+            winFilesViewer = options.aml;
             
             // Create the Ace Tree
             tree = new Tree(container.$int);
@@ -227,11 +238,23 @@ define(function(require, exports, module) {
             tree.setDataProvider(fsCache.model);
             tree.setOption("enableDragDrop", true);
             
+            // tree.tooltip = new Tooltip(tree);
+            
             fsCache.model.$indentSize = 12;
             fsCache.model.getIconHTML = function(node) {
                 var icon = node.isFolder ? "folder" : util.getFileIcon(node.label);
                 if (node.status === "loading") icon = "loading";
                 return "<span class='filetree-icon " + icon + "'></span>";
+            };
+            
+            fsCache.model.getTooltipText = function(node) {
+                var size = node.size;
+                return node.label + (node.link ? " => " + node.link  + "\n" : "")
+                    + (size != undefined && !node.isFolder ? " | " + (
+                        size < 0x400 ? size + " bytes" :
+                        size < 0x100000 ? (size / 0x400).toFixed(2) + "KB" :
+                            (size / 0x100000).toFixed(2) + "MB"
+                    ) : "");
             };
             
             if (settings.get("user/general/@treestyle") == "alternative")
@@ -254,10 +277,11 @@ define(function(require, exports, module) {
             btnTreeSettings.setAttribute("submenu", mnuFilesSettings);
             tree.renderer.on("scrollbarVisibilityChanged", updateScrollBarSize);
             tree.renderer.on("resize", updateScrollBarSize);
+            tree.renderer.scrollBarV.$minWidth = 10;
             function updateScrollBarSize() {
-                var w = tree.renderer.scrollBarV.getWidth();
+                var scrollBarV = tree.renderer.scrollBarV;
+                var w = scrollBarV.isVisible ? scrollBarV.getWidth() : 0;
                 btnTreeSettings.$ext.style.marginRight = Math.max(w - 2,  0) + "px";
-                tree.renderer.scroller.style.right = Math.max(w, 10) + "px";
             }
             
             tree.on("drop", function(e) {
@@ -304,7 +328,6 @@ define(function(require, exports, module) {
                 id: "mnuitemHiddenFiles",
                 type: "check",
                 caption: "Show Hidden Files",
-                visible: "{tree.container.visible}",
                 checked: "user/projecttree/@showhidden",
                 onclick: function(e) {
                     setTimeout(function() {
@@ -864,7 +887,7 @@ define(function(require, exports, module) {
         
             if (!scrollTimer) {
                 scrollTimer = setTimeout(function() {
-                    settings.set("state/projecttree/@scrollpos", 
+                    tree && settings.set("state/projecttree/@scrollpos", 
                         tree.provider.getScrollTop());
                     scrollTimer = null;
                 }, 1000);
@@ -880,7 +903,7 @@ define(function(require, exports, module) {
                     emit.sticky("ready");
                 };
                 
-                if (c9.connected) { //was c9.inited
+                if (c9.connected) { // was c9.inited
                     setTimeout(function() {
                         loadProjectTree(null, done);
                     }, 200);
@@ -942,10 +965,15 @@ define(function(require, exports, module) {
                 if (node === false || path.charAt(0) == "!") 
                     return increment();
                 
+                if (!/^[!~/]/.test(path)) {
+                    console.error("invalid path", path);
+                    delete expandedList[path];
+                    return increment();
+                }
+                
                 if (node && node.status == "loaded") {
                     expandNode(node);
-                    increment();
-                    return;
+                    return increment();
                 }
                 
                 fs.readdir(path, function(err, data) {
@@ -1313,6 +1341,19 @@ define(function(require, exports, module) {
             tree && tree.destroy();
             loaded = false;
             drawn = false;
+            
+            container = null;
+            winFilesViewer = null;
+            showHideScrollPos = null;
+            scrollTimer = null;
+            tree = null;
+            
+            expandedList = {};
+            scrollPos = -1;
+            loadedSettings = 0;
+            refreshing = false;
+            changed = false;
+            refreshTimer;
         });
         
         /***** Register and define API *****/

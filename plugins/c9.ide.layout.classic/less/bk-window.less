@@ -6,6 +6,7 @@
     border-radius: @dialog-border-radius;
     box-shadow: @dialog-shadow;
     
+    color: @dialog-content-color;
     background: @dialog-background-color; /* Especially for retina */
 }
 
@@ -130,3 +131,20 @@
     top: 25px;
 }
     
+.bk-window.dialog .bk-container{
+    display: flex;
+    flex-direction: column;
+}
+.bk-window.dialog .bk-container > div:first-child{
+    flex: 1;
+    position: relative;
+}
+
+.bk-window.wizard .bk-container > div:first-child > div{
+    position: absolute;
+    left: 0;
+    top: 0;
+    right: 0;
+    bottom: 0;
+    padding: 20px;
+}

@@ -17,19 +17,18 @@ define(function(require, module, exports) {
         var uCaseFirst = require("c9/string").uCaseFirst;
         
         function Panel(developer, deps, options) {
-            // Panel extends ext.Plugin
             var plugin = new Plugin(developer, deps);
             var emit = plugin.getEmitter();
             
             var autohide = options.autohide || false;
             var index = options.index || 100;
-            var className = options.className;
+            var buttonCSSClass = options.buttonCSSClass;
+            var panelCSSClass = options.panelCSSClass;
             var caption = options.caption;
-            var elementName = options.elementName;
             var width = options.width;
             var minWidth = options.minWidth;
             
-            var mnuItem, button, area, lastPanel, xpath, where;
+            var mnuItem, button, area, lastPanel, xpath, where, aml;
             
             plugin.on("load", function(){
                 xpath = "state/panels/" + plugin.name;
@@ -47,8 +46,11 @@ define(function(require, module, exports) {
                             area.enablePanel(plugin.name);
                         else
                             area.disablePanel(plugin.name);
-                    }
+                    },
                 });
+                
+                mnuItem.panel = plugin;
+                
                 menus.addItemByPath("Window/" + caption, mnuItem, index, plugin);
                 
                 panels.on("showPanel" + uCaseFirst(plugin.name), function(e) {
@@ -114,7 +116,7 @@ define(function(require, module, exports) {
                 if (mnuItem)
                     mnuItem.destroy(true, true);
     
-                menus.remove("View/Panels/" + caption);
+                menus.remove("Window/" + caption);
                 
                 panels.unregister(plugin);
             });
@@ -153,23 +155,27 @@ define(function(require, module, exports) {
                 if (drawn) return false;
                 drawn = true;
                 
+                aml = area.aml.appendChild(new ui.bar({
+                    "skin": "panel-bar",
+                    "class" : panelCSSClass || "",
+                    "visible": false
+                }));
+                plugin.addElement(aml);
+                
                 emit.sticky("draw", { 
-                    html: area.container, 
-                    aml: area.aml 
+                    html: aml.$int, 
+                    aml: aml 
                 });
                 
-                var aml = plugin.getElement(elementName);
-                if (aml) {
-                    aml.$ext.style.zIndex = 100;
-                    aml.$ext.style.minWidth = ""; //Needed for the anims
-                    aml.$ext.style.position = "absolute";
-                    aml.$ext.style.left = where == "left" ? area.width + "px" : 0;
-                    aml.$ext.style.top = 0;
-                    aml.$ext.style.right = where == "right" ? area.width + "px" : 0;
-                    aml.$ext.style.bottom = 0;
-                    
-                    aml.$display = apf.CSSPREFIX + "Flex";
-                }
+                aml.$ext.style.zIndex = 100;
+                aml.$ext.style.minWidth = ""; //Needed for the anims
+                aml.$ext.style.position = "absolute";
+                aml.$ext.style.left = where == "left" ? area.width + "px" : 0;
+                aml.$ext.style.top = 0;
+                aml.$ext.style.right = where == "right" ? area.width + "px" : 0;
+                aml.$ext.style.bottom = 0;
+                
+                aml.$display = apf.CSSPREFIX + "Flex";
                 
                 return true;
             }
@@ -178,7 +184,6 @@ define(function(require, module, exports) {
                 area = toArea;
                 
                 try {
-                    var aml = plugin.getElement(elementName);
                     if (aml)
                         area.aml.appendChild(aml);
                 } catch (e) {}
@@ -203,10 +208,11 @@ define(function(require, module, exports) {
                         state: true,
                         caption: caption,
                         auto: false,
-                        "class" : className || "",
-                        onmousedown: function(){
+                        "class" : buttonCSSClass || "",
+                        onmousedown: function(e){
+                            if (e.htmlEvent && e.htmlEvent.button) return;
                             panels.areas[where].toggle(plugin.name, autohide, true);
-                        },
+                        }
                     });
                     plugin.addElement(button);
                 }
@@ -312,8 +318,8 @@ define(function(require, module, exports) {
              *   autohiding panel. The developer is responsible for hiding
              *   the panel. This behavior will animate the panel during
              * @param hide and show over other panels, if there are any.
-             * @param {String}   [options.elementName] Specifies the name of the aml element that renders the panel
-             * @param {String}   [options.className]   Specifies the name of the css class that is applied to the panel
+             * @param {String}   [options.buttonCSSClass]   Specifies the name of the css class that is applied to the button
+             * @param {String}   [options.panelCSSClass]   Specifies the name of the css class that is applied to the panel
              * @param {Number}   [options.width]       Specifies the default width of the panel
              * @param {Number}   [options.minWidth]    Specifies the minimal width of the panel
              * @param {String}   [options.where]       Accepts "left" or "right" to determine where the panel is added
@@ -350,7 +356,11 @@ define(function(require, module, exports) {
                  * @private
                  * @readonly
                  */
-                get aml(){ return plugin.getElement(elementName); },
+                get aml(){ return aml; },
+                /**
+                 * @property {HTMLElement} container
+                 */
+                get container(){ return aml.$ext; },
                 
                 /**
                  * The area that this panel is a part of.

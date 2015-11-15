@@ -181,6 +181,21 @@ define(function(require, exports, module) {
         
         /***** Methods *****/
         
+        function splitSafe(path){
+           var pieces = [], escaped;
+           path.split("/").forEach(function(n){
+               if (escaped) n = escaped + "/" + n;
+               escaped = n.substr(-1) == "\\" ? n : false; //.substr(n, n.length - 1)
+               if (!escaped) pieces.push(n);
+           });
+           if (escaped) pieces.push(escaped);
+           return pieces;
+        }
+        
+        function popSafe(path){
+            return splitSafe(path).pop().replace(/\\\//g, "/");
+        }
+        
         function init(){
             inited = true;
             layout.initMenus(plugin);
@@ -211,28 +226,27 @@ define(function(require, exports, module) {
                 var editor = emit("getEditor");
     
                 var nodes = this.childNodes;
-                for (var start = 0, a, fn, cmd, n, i = nodes.length - 1; i >= 0; i--) {
-                    cmd = (n = nodes[i]).command;
-                    
-                    if (start == i && !n.visible)
-                        start = i + 1;
+                for (var n, prev, i = nodes.length - 1; i >= 0; i--) {
+                    var cmd = (n = nodes[i]).command;
 
                     if (!n.visible) continue;
-
+                    
                     // prevent dividers two consecutive dividers and dividers
                     // at bottom and top
                     if (n.localName == "divider") {
-                        if (i === start || i == nodes.length -1 
-                          || nodes[i - 1].localName == "divider")
+                        if (!prev || prev.localName == "divider")
                             n.hide();
                         else
                             n.show();
+                        
+                        prev = n;
                         continue;
                     }
+                    prev = n;
                     
                     var c = cmd && commands.commands[cmd];
-                    fn = c && c.isAvailable;
-                    a = (!n.isAvailable || n.isAvailable(editor))
+                    var fn = c && c.isAvailable;
+                    var a = (!n.isAvailable || n.isAvailable(editor))
                       && (!fn || fn(editor));
                      
                     if (!cmd) 
@@ -241,6 +255,9 @@ define(function(require, exports, module) {
                         continue;
 
                     n[a ? "enable" : "disable"]();
+                }
+                if (prev && prev.localName == "divider") {
+                    prev.hide();
                 }
             }
             
@@ -363,7 +380,8 @@ define(function(require, exports, module) {
             if (item) {
                 item.setAttribute("submenu", menu);
                 item.setAttribute("caption",
-                    apf.escapeXML((debug ? "(" + index + ")" : "") + name.split("/").pop()));
+                    apf.escapeXML((debug ? "(" + index + ")" : "") 
+                    + popSafe(name)));
                 items[name] = item;
             }
             else {
@@ -372,7 +390,7 @@ define(function(require, exports, module) {
                     item = items[name] = new apf.item({
                         submenu: menu,
                         caption: (debug ? "(" + index + ") " : "") +
-                            name.split("/").pop()
+                            popSafe(name)
                     });
                 }
                 else {
@@ -400,7 +418,7 @@ define(function(require, exports, module) {
         function setMenuItem(parent, name, menuItem, index, item, plugin) {
             if (item && !item.nodeFunc) plugin = item, item = null;
             
-            var itemName = name.split("/").pop();
+            var itemName = popSafe(name);
             if (itemName == "~")
                 name += index;
     
@@ -460,7 +478,7 @@ define(function(require, exports, module) {
             
             assert(plugin !== undefined, "addItemByPath requires a plugin argument");
             
-            var steps = path.split("/"), name, p = [], isLast;
+            var steps = splitSafe(path), name, p = [], isLast;
             var curpath;
     
             if (!menuItem)
@@ -566,7 +584,7 @@ define(function(require, exports, module) {
             if (!items[path])
                 throw new Error("Could not find menu item " + path);
             
-            var steps = path.split("/"), p = [], item;
+            var steps = splitSafe(path), p = [], item;
             var curpath;
     
             for (var name, i = 0, l = steps.length; i < l; i++) {
@@ -924,6 +942,10 @@ define(function(require, exports, module) {
                 return item;
             }
             
+            function remove(item){
+                aml.removeChild(item.aml);
+            }
+            
             function show(x, y) {
                 lastCoords = { x : x, y : y };
                 aml.display(x, y);
@@ -932,6 +954,12 @@ define(function(require, exports, module) {
             plugin.on("load", function(){
                 aml = new ui.menu({
                     id: options.id,
+                    zindex: options.zindex,
+                    visible: options.visible,
+                    width: options.width,
+                    height: options.height,
+                    minWidth: options.minWidth,
+                    minHeight: options.minHeight,
                     "onprop.visible" : function(e) {
                         emit(e.value ? "show" : "hide", lastCoords);
                         checkItems.call(this, e);
@@ -1033,6 +1061,36 @@ define(function(require, exports, module) {
                  */
                 get visible(){ return aml.visible; },
                 /**
+                 * Specifies the zindex of the menu
+                 * @property {Number} zindex
+                 */
+                get zindex(){ return aml && ui.getStyle(aml.$ext, "z-index"); },
+                set zindex(value) { aml && aml.setAttribute("zindex", value); },
+                /**
+                 * Specifies the width of the menu
+                 * @property {Number} width
+                 */
+                get width(){ return aml && aml.getWidth(); },
+                set width(value) { aml && aml.setAttribute("width", value); },
+                /**
+                 * Specifies the height of the menu
+                 * @property {Number} height
+                 */
+                get height(){ return aml && aml.getHeight(); },
+                set height(value) { aml && aml.setAttribute("height", value); },
+                /**
+                 * Specifies the minimal width of the menu
+                 * @property {Number} width
+                 */
+                get minWidth(){ return aml && aml.getAttribute("minwidth"); },
+                set minWidth(value) { aml && aml.setAttribute("minwidth", value); },
+                /**
+                 * Specifies the minimal height of the menu
+                 * @property {Number} height
+                 */
+                get minHeight(){ return aml && aml.getAttribute("minheight"); },
+                set minHeight(value) { aml && aml.setAttribute("minheight", value); },
+                /**
                  * The menu items appended to this menu
                  * @property {MenuItem[]} items
                  * @readonly
@@ -1063,6 +1121,12 @@ define(function(require, exports, module) {
                  * @param {MenuItem} item  The item to add to this menu.
                  */
                 append: append,
+                
+                /**
+                 * Remove a menu item from this menu
+                 * @param {MenuItem} item  The item to remove from this menu.
+                 */
+                remove: remove,
                 
                 /**
                  * Show the menu at the specified position

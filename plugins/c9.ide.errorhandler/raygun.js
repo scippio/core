@@ -165,6 +165,7 @@ TraceKit.report = (function reportModuleWrapper() {
         else
         {
         if (lastExceptionStack) {
+            errorObj = lastException;
             TraceKit.computeStackTrace.augmentStackTraceWithInitialElement(lastExceptionStack, url, lineNo, message);
             stack = lastExceptionStack;
             lastExceptionStack = null;
@@ -187,7 +188,7 @@ TraceKit.report = (function reportModuleWrapper() {
         }
         }
 
-        notifyHandlers(stack, 'from window.onerror');
+        notifyHandlers(stack, 'from window.onerror', {errorObj: errorObj});
 
         if (_oldOnerrorHandler) {
             return _oldOnerrorHandler.apply(this, arguments);
@@ -201,7 +202,7 @@ TraceKit.report = (function reportModuleWrapper() {
      * @param {Error} ex
      */
     function report(ex) {
-        var args = _slice.call(arguments, 1);
+        var args = _slice.call(arguments, 0);
         if (lastExceptionStack) {
             if (lastException === ex) {
                 return; // already caught by an inner catch block, ignore
@@ -1416,7 +1417,28 @@ window.TraceKit = TraceKit;
       }
     }
   }
-
+    
+  var blackListedErrors = {
+    'Error with empty message': {},
+    'Script error.': {},
+    'DealPly is not defined': { factor: 10e5 },
+    "Cannot read property 'style' of null": { factor: 10e3 },
+    "Project with id '<id>' does not exist": { factor: 10e2 },
+    "Workspace not found": { factor: 10e2 },
+  };
+  var groupedErrors = [{
+    regex: /^((?:Project|User) with id ')(\d+)(' does not exist)/i,
+    pullOut: { 1: 'id' }
+  }, {
+    regex: /^(Failed to execute 'send' on 'XMLHttpRequest': Failed to load)([\s\S]*)/i,
+    pullOut: { 1: 'url' }
+  }, {
+    regex: /^(Cannot GET \/)([\s\S]*)/i,
+    pullOut: { 1: 'url' }
+  }, {
+    regex: /^(Error whilst parsing: Unexpected end whilst parsing (?:xpath|xml|string))([\s\S]*)/i,
+    pullOut: { 1: 'apfStuff' }
+  }];
   function processUnhandledException(stackTrace, options) {
     var stack = [],
         qs = {};
@@ -1442,13 +1464,13 @@ window.TraceKit = TraceKit;
       });
     }
 
-    if (options === undefined) {
+    if (!options) {
       options = {};
     }
 
     if (isEmpty(options.customData)) {
       if (typeof _customData === 'function') {
-        options.customData = _customData();
+        options.customData = _customData(options.errorObj);
       } else {
         options.customData = _customData;
       }
@@ -1469,14 +1491,42 @@ window.TraceKit = TraceKit;
       finalCustomData = { error: msg };
       log('Raygun4JS: ' + msg);
     }
+    
+    // c9!
+    var message = custom_message || stackTrace.message || options.status || 'Error with empty message';
+    
+    groupedErrors.some(function(g) {
+      if (g.regex.test(message)) {
+        var parts = message.split(g.regex);
+        message = "";
+        parts.forEach(function(p, i) {
+          if (g.pullOut[i - 1]) {
+            finalCustomData[g.pullOut[i - 1]] = p;
+            message += "<" + g.pullOut[i - 1] + ">";
+          } else {
+            message += p;
+          }
+        });
+        return true;
+      }
+    });
+    
+    if (blackListedErrors.hasOwnProperty(message)) {
+        var count = (blackListedErrors[message].count || 0) + 1;
+        blackListedErrors[message].count = count;
+        if (count % (blackListedErrors[message].factor || 10) !== 1) {
+            return;
+        }
+        finalCustomData.$blackList = blackListedErrors[message];
+    }
 
     var payload = {
       'OccurredOn': new Date(),
       'Details': {
         'Error': {
           'ClassName': stackTrace.name,
-          'Message': custom_message || stackTrace.message || options.status || 'Script error',
-          'StackTrace': stack
+          'Message': message,
+          'StackTrace': stack,
         },
         'Environment': {
           'UtcOffset': new Date().getTimezoneOffset() / -60.0,
